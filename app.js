@@ -5,7 +5,10 @@ require("./config")(app);
 require("dotenv").config();
 require("./db/index");
 
-const authRoutes = require("./routes/auth.routes");
-app.use("/", authRoutes);
+const authRouter = require("./routes/auth.routes");
+app.use("/", authRouter);
+
+const yelpRouter = require("./routes/yelp.routes");
+app.use("/", yelpRouter);
 
 module.exports = app;

@@ -17,21 +17,21 @@ router.post("/signup", (req, res) => {
 	if (name === "" || email === "" || password === "") {
 		return res
 			.status(400)
-			.json({ err: "Please add a name, email, and password." });
+			.json({ err: "Please enter a name, email, and password." });
 	}
 
 	// Check if the email is written in a valid email format. If it's not send an error
 	const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
 	console.log(email);
 	if (!emailRegex.test(email)) {
-		return res.status(400).json({ err: "Please enter a valid email address." });
+		return res.status(400).json({ err: "Please enter a valid email address" });
 	}
 
 	// Check if the password meets all the requirements. If it doesn't send an error
-	const passwordRegEx = /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*]).{8,}$/;
+	const passwordRegEx = /(?=.*[a-z])(?=.*[A-Z])(?=.{8,})/;
 	if (!passwordRegEx.test(password)) {
 		return res.status(400).json({
-			err: "Password must include: one uppercase letter, one lowercase letter, more than 8 characters, and at least one special character.",
+			err: "Password must be 8 characters long, have one uppercase letter, and lowercase letter",
 		});
 	}
 
@@ -39,34 +39,34 @@ router.post("/signup", (req, res) => {
 	User.findOne({ email }).then((user) => {
 		if (user) {
 			return res.status(400).json({ err: "User already exists." });
+		} else {
+			// If the user doesn't exist hash the password with bcryptjs
+			const salt = bcrypt.genSaltSync(10);
+			const hashedPassword = bcrypt.hashSync(password, salt);
+
+			// Create the new user with the hashed password
+			return User.create({
+				name: name,
+				email: email,
+				password: hashedPassword,
+				favorites: [],
+			})
+				.then(() => {
+					return res.status(200).json({ message: "User has been created" });
+				})
+				.catch((err) => {
+					console.log(err);
+					return res.status(400).json({ err: "Could not create user" });
+				});
 		}
 	});
-
-	// If the user doesn't exist hash the password with bcryptjs
-	const salt = bcrypt.genSaltSync(10);
-	const hashedPassword = bcrypt.hashSync(password, salt);
-
-	// Create the new user with the hashed password
-	User.create({
-		name: name,
-		email: email,
-		password: hashedPassword,
-		favorites: [],
-	})
-		.then(() => {
-			return res.status(200).json({ message: "User has been created." });
-		})
-		.catch(() => {
-			return res.status(400).json({ err: "Could not create user." });
-		});
 });
 
-// Route for logging in
 router.post("/login", (req, res) => {
 	const { email, password } = req.body;
 
 	if (email === "" || password === "") {
-		return res.status(400).json({ err: "Please add an email and password." });
+		return res.status(400).json({ err: "Please enter an email and password." });
 	}
 
 	// Query through database and find user with email
@@ -75,39 +75,37 @@ router.post("/login", (req, res) => {
 			// If there is no user send an error
 			if (!user) {
 				return res.status(401).json({ err: "Could not verify credentials." });
+			} else {
+				//  Check if the password user types in matched the encrypted password in the database
+				const passwordMatch = bcrypt.compareSync(password, user.password);
+
+				// If password is not correct return an error
+				if (!passwordMatch) {
+					return res.status(401).json({ err: "Could not verify credentials." });
+				}
+
+				// If the password matches make a payload object with the users information
+				const payload = {
+					name: user.name,
+					id: user._id,
+					email: user.email,
+				};
+
+				// Create an access token with jwt, add the payload, and sign with token secret
+				const token = jwt.sign(payload, process.env.TOKEN_KEY, {
+					algorithm: "HS256",
+					expiresIn: "1h",
+				});
+
+				// Create a refresh token with jwt, add the payload, and sign with refresh token secret
+				const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_KEY, {
+					algorithm: "HS256",
+					expiresIn: "1d",
+				});
+
+				// Send the client the authorization token
+				res.status(200).json({ authToken: token, refreshToken: refreshToken });
 			}
-
-			//  Check if the password user types in matched the encrypted password in the database
-			const passwordMatch = bcrypt.compareSync(password, user.password);
-
-			// If password is not correct return an error
-			if (!passwordMatch) {
-				return res.status(401).json({ err: "Could not verify credentials." });
-			}
-
-			// If the password matches make a payload object with the users information
-			const payload = {
-				name: user.name,
-				id: user._id,
-				email: user.email,
-			};
-
-			// Create an access token with jwt, add the payload, and sign with token secret
-			const token = jwt.sign(payload, process.env.TOKEN_KEY, {
-				algorithm: "HS256",
-				expiresIn: "1m",
-			});
-
-			// Create a refresh token with jwt, add the payload, and sign with refresh token secret
-			const refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_KEY, {
-				algorithm: "HS256",
-				expiresIn: "1d",
-			});
-
-			// Send the client the authorization token
-			return res
-				.status(200)
-				.json({ authToken: token, refreshToken: refreshToken });
 		})
 		.catch(() => {
 			// If there's an error connecting to the database send a server error
@@ -128,23 +126,18 @@ router.get("/refresh", (req, res) => {
 
 	const token = jwt.sign(payload, process.env.TOKEN_KEY, {
 		algorithm: "HS256",
-		expiresIn: "1m",
+		expiresIn: "1h",
 	});
 
 	if (!decoded) {
 		return res.status(401).json({ err: "Invalid token." });
+	} else {
+		return res.status(200).json({ authToken: token });
 	}
-
-	return res.status(200).json({ authToken: token });
 });
 
 router.get("/verify", isAuthenticated, (req, res) => {
 	res.status(200).json(req.user);
-});
-
-router.get("/bunny", (req, res) => {
-	console.log(req.query.color);
-	res.status(200).json({ message: "yay" });
 });
 
 module.exports = router;
